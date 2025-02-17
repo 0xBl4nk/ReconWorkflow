@@ -65,6 +65,14 @@ bbrf scope in --wildcard --top | sed 's/^\*\.//g' \
 echo "Running jsubfinder..."
 bbrf scope in --wildcard --top | jsubfinder search | bbrf domain add - --show-new
 
+# Run puredns using an static wordlist
+echo "Running puredns (subdomain brute force with static wordlist)..."
+puredns_static_out="$output_dir/puredns_${target}_static-subdomains_${timestamp}.txt"
+static_wordlist="src/wordlist/http/subdomain-wordlist.txt"
+bbrf scope in --wildcard --top \
+  | xargs -I@ sh -c 'puredns bruteforce "'"$static_wordlist"'" @ -r src/http/resolvers.txt -w "'"$puredns_static_out"'" -q' \
+  | bbrf domain add - --show-new
+
 # Create the dynamic wordlist
 subdomains_file="$output_dir/subdomains.txt"
 urls_file="$output_dir/urls.txt"
@@ -98,7 +106,7 @@ echo ""
 # --------------------------------------------------------------------------
 # Run puredns using the dynamic wordlist
 # --------------------------------------------------------------------------
-echo "Running puredns (subdomain brute force with new wordlist)..."
+echo "Running puredns (subdomain brute force with dynamic wordlist)..."
 puredns_out="$output_dir/puredns_${target}_domains_${timestamp}.txt"
 bbrf scope in --wildcard --top \
   | xargs -I{ sh -c 'puredns bruteforce "'"$dynamic_wordlist"'" { -r src/http/resolvers.txt -w "'"$puredns_out"'" -q' \
