@@ -65,32 +65,48 @@ echo "Collecting domains and creating a dynamic wordlist..."
 
 echo "Running subfinder..."
 subfinder_out="$output_dir/subfinder_${target}_subs_${timestamp}.txt"
-bbrf scope in --wildcard --top | subfinder -silent | tee "$subfinder_out" | bbrf domain add - --show-new
+bbrf scope in --wildcard --top \
+  | subfinder -silent \
+  | anew "$subfinder_out" \
+  | bbrf domain add - --show-new \
+  > /dev/null
 
 echo "Running findomain..."
 findomain_out="$output_dir/findomain_${target}_domains_${timestamp}.txt"
-bbrf scope in --wildcard --top | xargs -I@ sh -c 'findomain -t @ -q' | tee "$findomain_out" | bbrf domain add - --show-new
+bbrf scope in --wildcard --top \
+  | xargs -I@ sh -c 'findomain -t @ -q' \
+  | anew "$findomain_out" \
+  | bbrf domain add - --show-new \
+  > /dev/null
 
 echo "Running crt.sh..."
-bbrf scope in --wildcard --top | sed 's/^\*\.//g' \
-  | xargs -I@ sh -c 'curl -s "https://crt.sh/?q=@&output=json"' \
+bbrf scope in --wildcard --top \
+  | sed 's/^\*\.//g' \
+  | xargs -I# sh -c 'curl -s "https://crt.sh/?q=#&output=json"' \
   | jq -r '.[].name_value' \
-  | bbrf domain add - --show-new
+  | bbrf domain add - --show-new \
+  > /dev/null
 
 echo "Running assetfinder..."
-bbrf scope in --wildcard --top | sed 's/^\*\.//g' \
+bbrf scope in --wildcard --top \
+  | sed 's/^\*\.//g' \
   | xargs -I@ sh -c 'assetfinder --subs-only @' \
-  | bbrf domain add - --show-new
+  | bbrf domain add - --show-new \
+  > /dev/null
 
 echo "Running jsubfinder..."
-bbrf scope in --wildcard --top | jsubfinder search | bbrf domain add - --show-new
+bbrf scope in --wildcard --top \
+  | jsubfinder search \
+  | bbrf domain add - --show-new \
+  > /dev/null
 
 # Run puredns using an static wordlist
-echo "Running puredns (subdomain brute force with new wordlist)..."
+echo "Running puredns (subdomain brute force with static wordlist)..."
 puredns_static_out="$output_dir/puredns_${target}_static-subdomains_${timestamp}.txt"
 bbrf scope in --wildcard --top \
   | xargs -I@ sh -c 'puredns bruteforce "'"$static_wordlist"'" @ -r "'"$resolvers_file"'" -w "'"$puredns_static_out"'" -q' \
-  | bbrf domain add - --show-new
+  | bbrf domain add - --show-new \
+  > /dev/null
 
 # Create the dynamic wordlist
 subdomains_file="$output_dir/subdomains.txt"
@@ -98,24 +114,28 @@ urls_file="$output_dir/urls.txt"
 endpoints_file="$output_dir/endpoints.txt"
 dynamic_wordlist="$output_dir/wordlist.txt"
 
+echo "Creating dynamic wordlist..."
+
 # Export all bbrf domains to subdomains_file
-bbrf domains | anew "$subdomains_file"
+bbrf domains | anew "$subdomains_file" > /dev/null
 
 # Use httpx on all subdomains to get live URLs
-httpx -silent -l "$subdomains_file" | anew "$urls_file"
+httpx -silent -l "$subdomains_file" | anew "$urls_file" > /dev/null
 
 # Use hakrawler to extract endpoints
-# (Removing the invalid "-urls" flag and using STDIN instead)
-cat "$urls_file" | hakrawler | anew "$endpoints_file"
+cat "$urls_file" | hakrawler | anew "$endpoints_file" > /dev/null
 
 # For each endpoint, use curl + haklistgen
-# Parallel is optional; if it causes issues, revert to a simple while loop
-cat "$endpoints_file" | parallel -j 5 'curl {} --insecure 2>/dev/null | haklistgen' | anew "$dynamic_wordlist"
+cat "$endpoints_file" \
+  | parallel -j 5 'curl {} --insecure 2>/dev/null | haklistgen' \
+  | anew "$dynamic_wordlist" \
+  > /dev/null
 
 # Feed all files (subdomains, urls, endpoints) into haklistgen
 cat "$subdomains_file" "$urls_file" "$endpoints_file" \
   | haklistgen \
-  | anew "$dynamic_wordlist"
+  | anew "$dynamic_wordlist" \
+  > /dev/null
 
 echo "Dynamic wordlist created: $dynamic_wordlist"
 echo ""
@@ -125,14 +145,19 @@ echo "Running puredns (subdomain brute force with new wordlist)..."
 puredns_out="$output_dir/puredns_${target}_domains_${timestamp}.txt"
 bbrf scope in --wildcard --top \
   | xargs -I{ sh -c 'puredns bruteforce "'"$dynamic_wordlist"'" { -r "'"$resolvers_file"'" -w "'"$puredns_out"'" -q' \
-  | bbrf domain add - --show-new
+  | bbrf domain add - --show-new \
+  > /dev/null
 
 # --------------------------------------------------------------------------
 # SCANNING CACHED URLS
 # --------------------------------------------------------------------------
 echo "Running subtack..."
 subtack_out="$output_dir/subtack_${target}_${timestamp}.txt"
-bbrf domains | subtack -t 10 -silent | tee "$subtack_out" | notify -silent
+bbrf domains \
+  | subtack -t 10 -silent \
+  | tee "$subtack_out" \
+  | notify -silent \
+  > /dev/null
 
 echo "Running sdlookup..."
 sdlookup_out="$output_dir/sdlookup_${target}_${timestamp}.txt"
@@ -140,11 +165,16 @@ bbrf domains \
   | httpx -silent -ip \
   | awk '{print $2}' | tr -d '[]' \
   | xargs -I@ sh -c 'echo @ | sdlookup -json | jq' \
-  | tee "$sdlookup_out"
+  | tee "$sdlookup_out" \
+  > /dev/null
 
 echo "Running gau..."
 gau_out="$output_dir/gau_${target}_200_${timestamp}.txt"
-bbrf scope in --wildcard --top | gau | nilo | anew "$gau_out"
+bbrf scope in --wildcard --top \
+  | gau \
+  | nilo \
+  | anew "$gau_out" \
+  > /dev/null
 
 echo "Running XSS polyglot scan..."
 xssPolyglot_out="$output_dir/xssPolyglot_${target}_${timestamp}.txt"
@@ -153,7 +183,8 @@ tr '\n' '\0' < "$script_dir/src/xss/polyglots.txt" \
      payload="$1"
      cat "'"$gau_out"'" | grep "=" | qsreplace "$payload" | airixss -payload "alert()" | grep -E -v "Not"
   ' _ \
-  | tee "$xssPolyglot_out"
+  | tee "$xssPolyglot_out" \
+  > /dev/null
 
 echo ""
 echo "=== Process completed. Results saved in: $output_dir ==="
