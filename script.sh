@@ -105,7 +105,11 @@ bbrf domains | anew "$subdomains_file"
 httpx -silent -l "$subdomains_file" | anew "$urls_file"
 
 # Use hakrawler to extract endpoints
-hakrawler -urls "$urls_file" | anew "$endpoints_file"
+# (Removing the invalid "-urls" flag and using STDIN instead)
+cat "$urls_file" | hakrawler | anew "$endpoints_file"
+
+# For each endpoint, use curl + haklistgen
+# Parallel is optional; if it causes issues, revert to a simple while loop
 cat "$endpoints_file" | parallel -j 5 'curl {} --insecure 2>/dev/null | haklistgen' | anew "$dynamic_wordlist"
 
 # Feed all files (subdomains, urls, endpoints) into haklistgen
@@ -154,4 +158,3 @@ tr '\n' '\0' < "$script_dir/src/xss/polyglots.txt" \
 echo ""
 echo "=== Process completed. Results saved in: $output_dir ==="
 echo "Log file: $log_file"
-
