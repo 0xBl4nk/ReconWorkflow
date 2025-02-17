@@ -1,4 +1,19 @@
 #!/usr/bin/env bash
+set -euo pipefail
+IFS=$'\n\t'
+
+# Verifying dependencies
+for cmd in bbrf subfinder findomain puredns httpx hakrawler haklistgen sdlookup gau qsreplace airixss subtack anew nilo jq parallel; do
+  if ! command -v "$cmd" &>/dev/null; then
+    echo "Error: $cmd is not installed or not found in PATH."
+    exit 1
+  fi
+done
+
+# Logging everything to a file
+timestamp_now=$(date +%Y%m%d-%H%M%S)
+log_file="script_log_$timestamp_now.txt"
+exec > >(tee -a "$log_file") 2>&1
 
 # --------------------------------------------------------------------------
 # Recon Script -> github.com/0xBl4nk/ReconWorkflow
@@ -29,10 +44,15 @@ fi
 # ------------------
 # Setup environment
 # ------------------
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 bbrf use "$target"
 timestamp=$(date +%Y%m%d-%H%M%S)
 output_dir="$target"
 mkdir -p "$output_dir"
+
+# Using absolute paths for wordlists and resolvers
+static_wordlist="$script_dir/src/wordlist/http/subdomains-wordlist.txt"
+resolvers_file="$script_dir/src/http/resolvers.txt"
 
 echo "Target: $target"
 echo ""
@@ -66,11 +86,10 @@ echo "Running jsubfinder..."
 bbrf scope in --wildcard --top | jsubfinder search | bbrf domain add - --show-new
 
 # Run puredns using an static wordlist
-echo "Running puredns (subdomain brute force with static wordlist)..."
+echo "Running puredns (subdomain brute force with new wordlist)..."
 puredns_static_out="$output_dir/puredns_${target}_static-subdomains_${timestamp}.txt"
-static_wordlist="src/wordlist/http/subdomain-wordlist.txt"
 bbrf scope in --wildcard --top \
-  | xargs -I@ sh -c 'puredns bruteforce "'"$static_wordlist"'" @ -r src/http/resolvers.txt -w "'"$puredns_static_out"'" -q' \
+  | xargs -I@ sh -c 'puredns bruteforce "'"$static_wordlist"'" @ -r "'"$resolvers_file"'" -w "'"$puredns_static_out"'" -q' \
   | bbrf domain add - --show-new
 
 # Create the dynamic wordlist
@@ -83,17 +102,11 @@ dynamic_wordlist="$output_dir/wordlist.txt"
 bbrf domains | anew "$subdomains_file"
 
 # Use httpx on all subdomains to get live URLs
-cat "$subdomains_file" | httpx -silent | anew "$urls_file"
+httpx -silent -l "$subdomains_file" | anew "$urls_file"
 
 # Use hakrawler to extract endpoints
-cat "$urls_file" | hakrawler | anew "$endpoints_file"
-
-# For each endpoint, use curl + haklistgen
-while read -r url; do
-  curl "$url" --insecure 2>/dev/null \
-    | haklistgen \
-    | anew "$dynamic_wordlist"
-done < "$endpoints_file"
+hakrawler -urls "$urls_file" | anew "$endpoints_file"
+cat "$endpoints_file" | parallel -j 5 'curl {} --insecure 2>/dev/null | haklistgen' | anew "$dynamic_wordlist"
 
 # Feed all files (subdomains, urls, endpoints) into haklistgen
 cat "$subdomains_file" "$urls_file" "$endpoints_file" \
@@ -103,13 +116,11 @@ cat "$subdomains_file" "$urls_file" "$endpoints_file" \
 echo "Dynamic wordlist created: $dynamic_wordlist"
 echo ""
 
-# --------------------------------------------------------------------------
 # Run puredns using the dynamic wordlist
-# --------------------------------------------------------------------------
-echo "Running puredns (subdomain brute force with dynamic wordlist)..."
+echo "Running puredns (subdomain brute force with new wordlist)..."
 puredns_out="$output_dir/puredns_${target}_domains_${timestamp}.txt"
 bbrf scope in --wildcard --top \
-  | xargs -I{ sh -c 'puredns bruteforce "'"$dynamic_wordlist"'" { -r src/http/resolvers.txt -w "'"$puredns_out"'" -q' \
+  | xargs -I{ sh -c 'puredns bruteforce "'"$dynamic_wordlist"'" { -r "'"$resolvers_file"'" -w "'"$puredns_out"'" -q' \
   | bbrf domain add - --show-new
 
 # --------------------------------------------------------------------------
@@ -133,7 +144,7 @@ bbrf scope in --wildcard --top | gau | nilo | anew "$gau_out"
 
 echo "Running XSS polyglot scan..."
 xssPolyglot_out="$output_dir/xssPolyglot_${target}_${timestamp}.txt"
-tr '\n' '\0' < src/xss/polyglots.txt \
+tr '\n' '\0' < "$script_dir/src/xss/polyglots.txt" \
   | xargs -0 -n 1 bash -c '
      payload="$1"
      cat "'"$gau_out"'" | grep "=" | qsreplace "$payload" | airixss -payload "alert()" | grep -E -v "Not"
@@ -142,4 +153,5 @@ tr '\n' '\0' < src/xss/polyglots.txt \
 
 echo ""
 echo "=== Process completed. Results saved in: $output_dir ==="
+echo "Log file: $log_file"
 
