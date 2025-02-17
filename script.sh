@@ -51,7 +51,7 @@ output_dir="$target"
 mkdir -p "$output_dir"
 
 # Using absolute paths for wordlists and resolvers
-static_wordlist="$script_dir/src/wordlist/http/subdomains-wordlist.txt"
+static_wordlist="$script_dir/src/wordlist/http/subdomain-wordlist.txt"
 resolvers_file="$script_dir/src/http/resolvers.txt"
 
 echo "Target: $target"
