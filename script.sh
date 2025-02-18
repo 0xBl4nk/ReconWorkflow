@@ -82,7 +82,7 @@ bbrf scope in --wildcard --top \
 echo "Running crt.sh..."
 bbrf scope in --wildcard --top \
   | sed 's/^\*\.//g' \
-  | xargs -I# sh -c 'curl -s "https://crt.sh/?q=#&output=json"' \
+  | xargs -I@ sh -c 'curl -s "https://crt.sh/?q=@&output=json"' \
   | jq -r '.[].name_value' \
   | bbrf domain add - --show-new \
   > /dev/null
@@ -99,6 +99,17 @@ bbrf scope in --wildcard --top \
   | jsubfinder search \
   | bbrf domain add - --show-new \
   > /dev/null
+
+echo "Running amass..."
+bbrf scope in --wildcard --top \
+  | xargs -I{} sh -c '
+      amass enum -rf "$resolvers_file" -nocolor -d {} 2>/dev/null \
+      | grep "(FQDN)" \
+      | awk "{print \$1}"
+    ' \
+  | sort -u \
+  | anew amass_subdomains.txt \
+  | bbrf domain add - --show-new
 
 # Run puredns using an static wordlist
 echo "Running puredns (subdomain brute force with static wordlist)..."
