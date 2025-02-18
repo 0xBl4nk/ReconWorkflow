@@ -3,7 +3,7 @@ set -euo pipefail
 IFS=$'\n\t'
 
 # Verifying dependencies
-for cmd in bbrf subfinder findomain puredns httpx hakrawler haklistgen sdlookup gau qsreplace airixss subtack anew nilo jq parallel; do
+for cmd in bbrf subfinder findomain puredns httpx hakrawler haklistgen sdlookup gau qsreplace airixss subtack anew nilo jq parallel amass; do
   if ! command -v "$cmd" &>/dev/null; then
     echo "Error: $cmd is not installed or not found in PATH."
     exit 1
@@ -102,16 +102,17 @@ bbrf scope in --wildcard --top \
 
 echo "Running amass..."
 bbrf scope in --wildcard --top \
-  | xargs -I{} sh -c '
-      amass enum -rf "$resolvers_file" -nocolor -d {} 2>/dev/null \
+  | xargs -I@ sh -c '
+      amass enum -rf "'"$resolvers_file"'" -nocolor -d @ 2>/dev/null \
       | grep "(FQDN)" \
       | awk "{print \$1}"
-    ' \
+  ' \
   | sort -u \
-  | anew amass_subdomains.txt \
-  | bbrf domain add - --show-new
+  | anew "$output_dir/amass_subdomains.txt" \
+  | bbrf domain add - --show-new \
+  > /dev/null
 
-# Run puredns using an static wordlist
+# Run puredns using a static wordlist
 echo "Running puredns (subdomain brute force with static wordlist)..."
 puredns_static_out="$output_dir/puredns_${target}_static-subdomains_${timestamp}.txt"
 bbrf scope in --wildcard --top \
@@ -128,15 +129,22 @@ dynamic_wordlist="$output_dir/wordlist.txt"
 echo "Creating dynamic wordlist..."
 
 # Export all bbrf domains to subdomains_file
-bbrf domains | anew "$subdomains_file" > /dev/null
+bbrf domains \
+  | anew "$subdomains_file" \
+  > /dev/null
 
 # Use httpx on all subdomains to get live URLs
-httpx -silent -l "$subdomains_file" | anew "$urls_file" > /dev/null
+httpx -silent -l "$subdomains_file" \
+  | anew "$urls_file" \
+  > /dev/null
 
 # Use hakrawler to extract endpoints
-cat "$urls_file" | hakrawler | anew "$endpoints_file" > /dev/null
+cat "$urls_file" \
+  | hakrawler \
+  | anew "$endpoints_file" \
+  > /dev/null
 
-# For each endpoint, use curl + haklistgen
+# For each endpoint, use curl + haklistgen (parallel)
 cat "$endpoints_file" \
   | parallel -j 5 'curl {} --insecure 2>/dev/null | haklistgen' \
   | anew "$dynamic_wordlist" \
@@ -155,7 +163,7 @@ echo ""
 echo "Running puredns (subdomain brute force with new wordlist)..."
 puredns_out="$output_dir/puredns_${target}_domains_${timestamp}.txt"
 bbrf scope in --wildcard --top \
-  | xargs -I{ sh -c 'puredns bruteforce "'"$dynamic_wordlist"'" { -r "'"$resolvers_file"'" -w "'"$puredns_out"'" -q' \
+  | xargs -I@ sh -c 'puredns bruteforce "'"$dynamic_wordlist"'" @ -r "'"$resolvers_file"'" -w "'"$puredns_out"'" -q' \
   | bbrf domain add - --show-new \
   > /dev/null
 
