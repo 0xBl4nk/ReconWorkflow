@@ -103,10 +103,9 @@ bbrf scope in --wildcard --top \
 echo "Running amass..."
 bbrf scope in --wildcard --top \
   | xargs -I@ sh -c '
-      amass enum -rf "'"$resolvers_file"'" -nocolor -d @ 2>/dev/null \
-      | grep "(FQDN)" \
-      | awk "{print \$1}"
-  ' \
+      amass enum -rf "'"$resolvers_file"'" -nocolor -d @' \
+  | grep "(FQDN)" \
+  | awk "{print \$1}" \
   | sort -u \
   | anew "$output_dir/amass_subdomains.txt" \
   | bbrf domain add - --show-new \
